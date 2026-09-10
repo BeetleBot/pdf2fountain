@@ -4,7 +4,30 @@
 
 It was designed specifically to convert industry-standard formatted screenplay PDFs into editable plain text without using OCR, external Python wrappers, or heavy runtime dependencies.
 
+Part of [iyal.ink](https://iyal.ink) — the Open Source Revolution for Film Writers.
+
 ---
+
+## Installation
+
+### CLI Tool
+```bash
+cargo install pdf2fountain
+```
+
+### Library Dependency
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+pdf2fountain = "0.1.0"
+```
+Or via cargo:
+```bash
+cargo add pdf2fountain
+```
+
+---
+
 
 ## What the Crate Does
 
@@ -125,6 +148,18 @@ To run the integration and unit tests:
 cargo test
 ```
 
+## Other Projects
+
+`pdf2fountain` is part of the [iyal.ink](https://iyal.ink) open-source ecosystem — building modern, privacy-focused, cross-platform tools for screenwriters and film storytellers:
+
+| Project | Description |
+|---|---|
+| **[ActOne Screenplay](https://github.com/BeetleBot/ActOne-Screenplay)** | Elegant, cross-platform desktop screenplay editor designed for focused writing and structural outlining. |
+| **[FountTUI](https://github.com/BeetleBot/FountTUI)** | Fast terminal-based UI (TUI) editor and reader for Fountain scripts. |
+
+---
+
 ## License
 
 MIT
+
