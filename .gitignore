@@ -1,0 +1,4 @@
+/target
+TestingFiles/
+.snapshots/
+*.tmp
