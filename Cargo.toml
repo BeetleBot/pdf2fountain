@@ -2,5 +2,21 @@
 name = "pdf2fountain"
 version = "0.1.0"
 edition = "2024"
+authors = ["Nirmal Kasi Rajan"]
+description = "Fast, standalone tool to convert screenplay pdf files to fountain"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/beetlebot/pdf2fountain"
+keywords = ["pdf", "fountain", "screenplay", "scriptwriting", "converter"]
+categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
+lopdf = "0.45.0"
+
+[lib]
+name = "pdf2fountain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pdf2fountain"
+path = "src/main.rs"

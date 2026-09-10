@@ -2,3 +2,4 @@
 TestingFiles/
 .snapshots/
 *.tmp
+*.fountain
