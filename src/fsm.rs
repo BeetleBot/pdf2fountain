@@ -55,12 +55,12 @@ pub fn parse_screenplay(pages: &[PageData], profile: &LayoutProfile) -> (Option<
                 continue;
             }
 
-            // check scene number on left margin (e.g. "10" followed by "INT. ...")
-            if is_pure_number(&item.text) && norm_x < profile.action_x - 0.02 {
+            // check scene number on left margin (e.g. "10" or "57A" followed by "INT. ...")
+            if is_scene_number_token(&item.text) && norm_x < profile.action_x - 0.02 {
                 if i + 1 < page.lines.len() {
                     let next_item = &page.lines[i + 1];
                     if (next_item.y - item.y).abs() < 5.0 && is_scene_heading(&next_item.text) {
-                        let sc_num = item.text.clone();
+                        let sc_num = item.text.trim_matches(|c| c == '#' || c == '.').to_string();
                         let (clean_heading, inline_sc) = extract_scene_number(&next_item.text);
                         blocks.push(ScriptBlock {
                             element_type: ElementType::SceneHeading,
@@ -77,7 +77,45 @@ pub fn parse_screenplay(pages: &[PageData], profile: &LayoutProfile) -> (Option<
 
             // check inline scene heading
             if is_scene_heading(&item.text) {
-                let (clean_heading, sc_num) = extract_scene_number(&item.text);
+                let (mut clean_heading, mut sc_num) = extract_scene_number(&item.text);
+
+                // Check if the next line continues this scene heading
+                // e.g. Line 1: "INT. RING MODULE, ENDURANCE -"
+                //      Line 2: "MOMENTS LATER #216#"
+                // or   Line 1: "INT. COCKPIT, LANDER - CONTINUOUS"
+                //      Line 2: "#202#"
+                while i + 1 < page.lines.len() {
+                    let next_item = &page.lines[i + 1];
+                    let current_ref_item = &page.lines[i];
+                    let y_gap = current_ref_item.y - next_item.y;
+                    let next_norm_x = next_item.x / page.width;
+
+                    if y_gap > 6.0 && y_gap < 20.0 {
+                        let next_trimmed = next_item.text.trim();
+                        if is_scene_number_token(next_trimmed) && next_norm_x < 0.95 {
+                            if sc_num.is_none() {
+                                sc_num = Some(next_trimmed.trim_matches(|c| c == '#' || c == '.').to_string());
+                            }
+                            i += 1;
+                            continue;
+                        }
+
+                        if clean_heading.ends_with('-')
+                            && next_norm_x < 0.45
+                            && next_trimmed.chars().all(|c| !c.is_alphabetic() || c.is_uppercase())
+                        {
+                            let (next_clean, next_sc) = extract_scene_number(next_trimmed);
+                            append_continuation_line(&mut clean_heading, &next_clean);
+                            if sc_num.is_none() {
+                                sc_num = next_sc;
+                            }
+                            i += 1;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+
                 blocks.push(ScriptBlock {
                     element_type: ElementType::SceneHeading,
                     text: clean_heading,
@@ -272,9 +310,23 @@ fn classify_by_margin(norm_x: f32, profile: &LayoutProfile, text: &str, state: E
 }
 
 fn is_scene_heading(s: &str) -> bool {
-    let clean = s.trim_start_matches(|c: char| c.is_ascii_digit() || c.is_whitespace() || c == '.').trim();
+    let clean = s.trim_start_matches(|c: char| c.is_ascii_digit() || c.is_whitespace() || c == '.' || c == '#').trim();
     let up = clean.to_uppercase();
-    up.starts_with("INT.") || up.starts_with("EXT.") || up.starts_with("INT/EXT") || up.starts_with("I/E")
+    if up.starts_with("INT.") || up.starts_with("EXT.") || up.starts_with("INT/EXT") || up.starts_with("I/E") {
+        return true;
+    }
+    let scene_suffixes = [" - DAY", " - NIGHT", " - CONTINUOUS", " - LATER", " - MOMENTS LATER", " - SAME TIME", " - DAWN", " - DUSK"];
+    scene_suffixes.iter().any(|suffix| up.contains(suffix)) && up.chars().all(|c| !c.is_alphabetic() || c.is_uppercase())
+}
+
+fn is_scene_number_token(s: &str) -> bool {
+    let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '#' || c == '.');
+    if clean.is_empty() || clean.len() > 8 {
+        return false;
+    }
+    let has_digit = clean.chars().any(|c| c.is_ascii_digit());
+    let valid_chars = clean.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    has_digit && valid_chars
 }
 
 fn extract_scene_number(s: &str) -> (String, Option<String>) {
@@ -283,16 +335,16 @@ fn extract_scene_number(s: &str) -> (String, Option<String>) {
         return (s.to_string(), None);
     }
 
-    // check if starts with number e.g. "10 INT. ..."
-    if is_pure_number(parts[0]) {
-        let sc_num = parts[0].to_string();
+    // check if starts with scene number e.g. "10 INT. ..." or "57A EARTH ORBIT..."
+    if is_scene_number_token(parts[0]) && parts.len() > 1 {
+        let sc_num = parts[0].trim_matches(|c| c == '#' || c == '.').to_string();
         let rest = parts[1..].join(" ");
         return (rest, Some(sc_num));
     }
 
-    // check trailing number
-    if parts.len() > 1 && is_pure_number(parts.last().unwrap()) {
-        let sc_num = parts.last().unwrap().to_string();
+    // check trailing number e.g. "... #202#" or "... 202"
+    if parts.len() > 1 && is_scene_number_token(parts.last().unwrap()) {
+        let sc_num = parts.last().unwrap().trim_matches(|c| c == '#' || c == '.').to_string();
         let rest = parts[..parts.len() - 1].join(" ");
         return (rest, Some(sc_num));
     }
@@ -301,10 +353,19 @@ fn extract_scene_number(s: &str) -> (String, Option<String>) {
 }
 
 fn is_character_name(s: &str) -> bool {
-    if s.len() > 38 || s.is_empty() {
+    if s.len() > 45 || s.is_empty() {
         return false;
     }
-    let clean = s.replace("(O.S.)", "").replace("(V.O.)", "").replace("(CONT'D)", "").replace("\"", "");
+    // Remove parenthetical extensions like (O.S.), (V.O.), (OVER RADIO), etc.
+    let mut clean = s.to_string();
+    while let Some(start) = clean.find('(') {
+        if let Some(end) = clean[start..].find(')') {
+            clean.replace_range(start..=start + end, "");
+        } else {
+            break;
+        }
+    }
+    let clean = clean.replace('"', "");
     let clean = clean.trim();
     if clean.is_empty() {
         return false;
@@ -326,11 +387,6 @@ fn ensure_parentheses(s: &str) -> String {
     }
 }
 
-fn is_pure_number(s: &str) -> bool {
-    let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
-    !clean.is_empty() && clean.chars().all(|c| c.is_ascii_digit())
-}
-
 fn is_running_page_number(s: &str) -> bool {
     let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
     clean.parse::<u32>().is_ok()
@@ -338,7 +394,13 @@ fn is_running_page_number(s: &str) -> bool {
 
 fn append_continuation_line(target: &mut String, next: &str) {
     let trimmed_next = next.trim();
-    if target.ends_with('-') && !target.ends_with("--") {
+    // Only join without space if it's an intra-word hyphen (e.g. "student-" -> "student-ah", but not " - " or "--")
+    let is_intra_word_hyphen = target.ends_with('-')
+        && !target.ends_with("--")
+        && !target.ends_with(" -")
+        && target.chars().nth_back(1).map_or(false, |c| c.is_alphanumeric());
+
+    if is_intra_word_hyphen {
         target.push_str(trimmed_next);
     } else {
         if !target.ends_with(' ') {

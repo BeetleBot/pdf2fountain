@@ -36,14 +36,20 @@ pub fn calibrate_layout(pages: &[PageData]) -> LayoutProfile {
         }
 
         for item in &page.lines {
-            // ignore running page headers on very top
-            if item.y < 60.0 && is_page_number(&item.text) {
+            // ignore running page headers on very top (PDF y=0 is at bottom)
+            if (page.height - item.y) < 75.0 && is_page_number(&item.text) {
+                continue;
+            }
+
+            // ignore standalone numbers (scene numbers in margins, page numbers)
+            if is_pure_number(&item.text) || is_page_number(&item.text) {
                 continue;
             }
 
             // normalized x ratio (0.0 .. 1.0)
             let norm_x = item.x / page.width;
-            if norm_x < 0.05 || norm_x > 0.95 {
+            // screenplay columns start at ~14% (1.2in+ margin) and end around 90%
+            if norm_x < 0.13 || norm_x > 0.90 {
                 continue;
             }
 
@@ -67,7 +73,7 @@ pub fn calibrate_layout(pages: &[PageData]) -> LayoutProfile {
 
     peaks.sort_by(|a, b| b.1.cmp(&a.1));
 
-    // group nearby peaks within 3% width
+    // group nearby peaks within 3.5% width
     let mut distinct_peaks: Vec<f32> = Vec::new();
     for (bucket, _) in peaks {
         let val = bucket as f32 / 100.0;
@@ -88,23 +94,21 @@ pub fn calibrate_layout(pages: &[PageData]) -> LayoutProfile {
 
     distinct_peaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    // assign learned peaks to screenplay roles
+    // assign learned peaks to screenplay roles by proximity
     let mut profile = LayoutProfile::default();
 
-    if !distinct_peaks.is_empty() {
-        profile.action_x = distinct_peaks[0];
-    }
-    if distinct_peaks.len() >= 2 {
-        profile.dialogue_x = distinct_peaks[1];
-    }
-    if distinct_peaks.len() >= 3 {
-        profile.parenthetical_x = distinct_peaks[2];
-    }
-    if distinct_peaks.len() >= 4 {
-        profile.character_x = distinct_peaks[3];
-    }
-    if distinct_peaks.len() >= 5 {
-        profile.transition_x = distinct_peaks[4];
+    for &p in &distinct_peaks {
+        if (p - 0.18).abs() < 0.06 {
+            profile.action_x = p;
+        } else if (p - 0.30).abs() < 0.05 {
+            profile.dialogue_x = p;
+        } else if (p - 0.37).abs() < 0.04 {
+            profile.parenthetical_x = p;
+        } else if (p - 0.44).abs() < 0.06 {
+            profile.character_x = p;
+        } else if p > 0.70 {
+            profile.transition_x = p;
+        }
     }
 
     profile
@@ -148,4 +152,9 @@ pub fn is_likely_title_page(page: &PageData) -> bool {
 fn is_page_number(s: &str) -> bool {
     let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
     clean.parse::<u32>().is_ok()
+}
+
+fn is_pure_number(s: &str) -> bool {
+    let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
+    !clean.is_empty() && clean.chars().all(|c| c.is_ascii_digit())
 }

@@ -83,8 +83,10 @@ pub fn extract_pages(doc: &Document) -> Result<Vec<PageData>, String> {
 
                     let trimmed = text.trim();
                     if !trimmed.is_empty() {
+                        let leading_spaces = text.chars().take_while(|c| c.is_whitespace()).count() as f32;
+                        let adjusted_x = current_x + leading_spaces * 7.2;
                         raw_items.push(RawTextItem {
-                            x: current_x,
+                            x: adjusted_x,
                             y: current_y,
                             text: trimmed.to_string(),
                         });
@@ -163,24 +165,36 @@ fn merge_same_line_items(mut items: Vec<RawTextItem>) -> Vec<RawTextItem> {
     });
 
     let mut result: Vec<RawTextItem> = Vec::new();
+    let mut last_end_x: f32 = 0.0;
+
     for item in items {
         if let Some(last) = result.last_mut() {
             if (last.y - item.y).abs() < 2.5 {
-                // check if this is a scene heading number on the right or left
-                // if gap is large, keep separated so scene number detector can find it
-                if (item.x - last.x).abs() < 20.0 {
-                    last.text.push(' ');
+                let gap = item.x - last_end_x;
+                // If gap is moderate (< 25pt), merge onto the same line.
+                // If gap is large (>= 25pt), keep separated (e.g. scene numbers in margins)
+                if gap < 25.0 {
+                    // In Courier 12pt, character pitch is ~7.2pt.
+                    // If gap <= 2.5pt, the characters are immediately adjacent in the same word (no space).
+                    // If gap > 2.5pt, it represents a word space.
+                    if gap > 2.5 && !last.text.ends_with(' ') && !item.text.starts_with(' ') {
+                        last.text.push(' ');
+                    }
                     last.text.push_str(&item.text);
+                    let char_count = item.text.chars().count() as f32;
+                    last_end_x = item.x + char_count * 7.2;
                     continue;
                 }
             }
         }
+        let char_count = item.text.chars().count() as f32;
+        last_end_x = item.x + char_count * 7.2;
         result.push(item);
     }
     result
 }
 
-fn decode_tj(doc: &Document, font: &lopdf::Dictionary, operands: &[Object]) -> String {
+pub fn decode_tj(doc: &Document, font: &lopdf::Dictionary, operands: &[Object]) -> String {
     let to_unicode = font.get(b"ToUnicode").ok()
         .and_then(|obj| match obj {
             Object::Reference(id) => doc.get_object(*id).ok(),
@@ -212,7 +226,7 @@ fn decode_tj(doc: &Document, font: &lopdf::Dictionary, operands: &[Object]) -> S
     out
 }
 
-fn decode_plain_tj(operands: &[Object]) -> String {
+pub fn decode_plain_tj(operands: &[Object]) -> String {
     let mut out = String::new();
     for op in operands {
         match op {
