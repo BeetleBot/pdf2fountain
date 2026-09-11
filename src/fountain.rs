@@ -37,9 +37,9 @@ pub fn format_fountain(title_page: Option<&TitlePageInfo>, blocks: &[ScriptBlock
                     heading
                 };
                 if let Some(num) = &block.scene_number {
-                    out.push_str(&format!(".{} #{num}#\n\n", heading_clean.to_lowercase()));
+                    out.push_str(&format!(".{} #{num}#\n\n", heading_clean.to_uppercase()));
                 } else {
-                    out.push_str(&format!(".{}\n\n", heading_clean.to_lowercase()));
+                    out.push_str(&format!(".{}\n\n", heading_clean.to_uppercase()));
                 }
             }
             ElementType::Action => {

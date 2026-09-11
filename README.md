@@ -19,7 +19,7 @@ cargo install pdf2fountain
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-pdf2fountain = "0.1.0"
+pdf2fountain = "0.1.1"
 ```
 Or via cargo:
 ```bash

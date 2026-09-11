@@ -144,8 +144,7 @@ pub fn parse_screenplay(pages: &[PageData], profile: &LayoutProfile) -> (Option<
                     if current_state == ElementType::Dialogue {
                         if let Some(last) = blocks.last_mut() {
                             if last.element_type == ElementType::Dialogue {
-                                last.text.push(' ');
-                                last.text.push_str(&item.text);
+                                append_continuation_line(&mut last.text, &item.text);
                             } else {
                                 blocks.push(ScriptBlock {
                                     element_type: ElementType::Dialogue,
@@ -183,8 +182,7 @@ pub fn parse_screenplay(pages: &[PageData], profile: &LayoutProfile) -> (Option<
                     if current_state == ElementType::Action && is_continuation {
                         if let Some(last) = blocks.last_mut() {
                             if last.element_type == ElementType::Action {
-                                last.text.push(' ');
-                                last.text.push_str(&item.text);
+                                append_continuation_line(&mut last.text, &item.text);
                             } else {
                                 blocks.push(ScriptBlock {
                                     element_type: ElementType::Action,
@@ -338,6 +336,18 @@ fn is_running_page_number(s: &str) -> bool {
     clean.parse::<u32>().is_ok()
 }
 
+fn append_continuation_line(target: &mut String, next: &str) {
+    let trimmed_next = next.trim();
+    if target.ends_with('-') && !target.ends_with("--") {
+        target.push_str(trimmed_next);
+    } else {
+        if !target.ends_with(' ') {
+            target.push(' ');
+        }
+        target.push_str(trimmed_next);
+    }
+}
+
 fn extract_title_page(page: &PageData) -> TitlePageInfo {
     let mut info = TitlePageInfo::default();
     let mut i = 0;
@@ -353,8 +363,28 @@ fn extract_title_page(page: &PageData) -> TitlePageInfo {
                 i += 2;
                 continue;
             }
+        } else if lower.starts_with("by ") || lower == "by" || lower.starts_with("by:") {
+            if lower == "by" || lower == "by:" {
+                info.credit = Some(line.clone());
+                if i + 1 < page.lines.len() {
+                    info.author = Some(page.lines[i + 1].text.clone());
+                    i += 2;
+                    continue;
+                }
+            } else {
+                let author_part = line[2..].trim_start_matches(|c| c == ':' || c == ' ').trim();
+                info.author = Some(author_part.to_string());
+            }
         } else if info.title.is_none() {
             info.title = Some(line.clone());
+        } else if info.author.is_none() && page.lines.len() <= 4 {
+            let is_date_or_contact = lower.contains("draft")
+                || lower.contains("@")
+                || lower.contains("phone")
+                || lower.chars().all(|c| c.is_ascii_digit() || c == '/' || c == '-' || c == '.');
+            if !is_date_or_contact {
+                info.author = Some(line.clone());
+            }
         }
         i += 1;
     }
