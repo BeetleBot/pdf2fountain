@@ -71,3 +71,37 @@ fn test_a4_and_usletter_consistency() {
 
     assert_eq!(a4, us);
 }
+
+#[test]
+fn test_fadeinexport_pdf() {
+    let pdf_path = "TestingFiles/fadeinexport.pdf";
+    if !Path::new(pdf_path).exists() {
+        return;
+    }
+
+    let result = parse_pdf_file_to_fountain(pdf_path).expect("failed parsing fadeinexport.pdf");
+    assert!(result.contains(".INT. RK HOSPITAL / CORRIDOR - DAY #1#"));
+    assert!(result.contains("@ROCKY"));
+    assert!(result.contains("@MADHU (V.O.)"));
+    assert!(result.contains("@REENA"));
+    assert!(result.contains("@VIJAY"));
+    assert!(result.contains("Sollunga Madhu. Enna thidir nu call pannirukeenga?"));
+    assert!(result.contains("> FADE OUT."));
+}
+
+#[test]
+fn test_afterwritingexport_pdf() {
+    let pdf_path = "TestingFiles/afterwritingexport.pdf";
+    if !Path::new(pdf_path).exists() {
+        return;
+    }
+
+    let result = parse_pdf_file_to_fountain(pdf_path).expect("failed parsing afterwritingexport.pdf");
+    assert!(result.contains(".INT. RK HOSPITAL / CAFETERIA - DAY"));
+    assert!(result.contains("@ROCKY"));
+    assert!(result.contains("@REENA"));
+    assert!(result.contains("@ARJUN"));
+    assert!(result.contains("@MADHU"));
+    assert!(result.contains("Nee Madhu nilamaila irundha enna panniruppa?"));
+    assert!(result.contains("> CUT TO:"));
+}

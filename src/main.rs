@@ -103,3 +103,32 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_page_range_single() {
+        assert_eq!(parse_page_range("5"), Some((5, 5)));
+        assert_eq!(parse_page_range(" 10 "), Some((10, 10)));
+    }
+
+    #[test]
+    fn test_parse_page_range_interval() {
+        assert_eq!(parse_page_range("1-10"), Some((1, 10)));
+        assert_eq!(parse_page_range("3-3"), Some((3, 3)));
+    }
+
+    #[test]
+    fn test_parse_page_range_open_ended() {
+        assert_eq!(parse_page_range("2-"), Some((2, usize::MAX)));
+        assert_eq!(parse_page_range("-5"), Some((1, 5)));
+    }
+
+    #[test]
+    fn test_parse_page_range_invalid() {
+        assert_eq!(parse_page_range("abc"), None);
+        assert_eq!(parse_page_range("1-2-3"), None);
+    }
+}

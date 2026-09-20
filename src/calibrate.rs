@@ -158,3 +158,78 @@ fn is_pure_number(s: &str) -> bool {
     let clean = s.trim_matches(|c: char| c.is_whitespace() || c == '.');
     !clean.is_empty() && clean.chars().all(|c| c.is_ascii_digit())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom::RawTextItem;
+
+    #[test]
+    fn test_is_page_number() {
+        assert!(is_page_number("1"));
+        assert!(is_page_number(" 42. "));
+        assert!(is_page_number("123"));
+        assert!(!is_page_number("PAGE 1"));
+        assert!(!is_page_number("Scene 10"));
+    }
+
+    #[test]
+    fn test_is_pure_number() {
+        assert!(is_pure_number("12"));
+        assert!(is_pure_number(".45."));
+        assert!(!is_pure_number("12A"));
+        assert!(!is_pure_number(""));
+    }
+
+    #[test]
+    fn test_is_likely_title_page_true() {
+        let page = PageData {
+            page_number: 1,
+            width: 612.0,
+            height: 792.0,
+            lines: vec![
+                RawTextItem { x: 200.0, y: 500.0, text: "THE GREAT SCRIPT".to_string() },
+                RawTextItem { x: 200.0, y: 480.0, text: "Written by".to_string() },
+                RawTextItem { x: 200.0, y: 460.0, text: "John Doe".to_string() },
+            ],
+        };
+        assert!(is_likely_title_page(&page));
+    }
+
+    #[test]
+    fn test_is_likely_title_page_false_if_has_scene_heading() {
+        let page = PageData {
+            page_number: 1,
+            width: 612.0,
+            height: 792.0,
+            lines: vec![
+                RawTextItem { x: 100.0, y: 700.0, text: "INT. LIVING ROOM - DAY".to_string() },
+                RawTextItem { x: 100.0, y: 680.0, text: "John sits on the couch.".to_string() },
+            ],
+        };
+        assert!(!is_likely_title_page(&page));
+    }
+
+    #[test]
+    fn test_is_likely_title_page_false_if_page_gt_1() {
+        let page = PageData {
+            page_number: 2,
+            width: 612.0,
+            height: 792.0,
+            lines: vec![
+                RawTextItem { x: 200.0, y: 500.0, text: "Written by".to_string() },
+            ],
+        };
+        assert!(!is_likely_title_page(&page));
+    }
+
+    #[test]
+    fn test_calibrate_layout_default() {
+        let profile = calibrate_layout(&[]);
+        assert_eq!(profile.action_x, 0.18);
+        assert_eq!(profile.dialogue_x, 0.30);
+        assert_eq!(profile.parenthetical_x, 0.37);
+        assert_eq!(profile.character_x, 0.44);
+        assert_eq!(profile.transition_x, 0.80);
+    }
+}

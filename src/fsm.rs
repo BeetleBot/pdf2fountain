@@ -478,3 +478,108 @@ fn find_last_character_name(blocks: &[ScriptBlock]) -> Option<&str> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_scene_heading() {
+        assert!(is_scene_heading("INT. COFFEE SHOP - DAY"));
+        assert!(is_scene_heading("EXT. PARK - NIGHT"));
+        assert!(is_scene_heading("INT/EXT. CAR - CONTINUOUS"));
+        assert!(is_scene_heading("I/E. SUBWAY - DAY"));
+        assert!(is_scene_heading("SOME PLACE - MOMENTS LATER"));
+        assert!(!is_scene_heading("He walked into the room."));
+        assert!(!is_scene_heading("JOHN"));
+    }
+
+    #[test]
+    fn test_is_scene_number_token() {
+        assert!(is_scene_number_token("1"));
+        assert!(is_scene_number_token("10"));
+        assert!(is_scene_number_token("57A"));
+        assert!(is_scene_number_token("#10#"));
+        assert!(is_scene_number_token("2."));
+        assert!(!is_scene_number_token("SCENE"));
+        assert!(!is_scene_number_token("TOOLONGSCENENUMBER"));
+    }
+
+    #[test]
+    fn test_extract_scene_number() {
+        let (heading, num) = extract_scene_number("10 INT. LIVING ROOM - DAY");
+        assert_eq!(num, Some("10".to_string()));
+        assert_eq!(heading, "INT. LIVING ROOM - DAY");
+
+        let (heading2, num2) = extract_scene_number("EXT. BEACH - NIGHT #42#");
+        assert_eq!(num2, Some("42".to_string()));
+        assert_eq!(heading2, "EXT. BEACH - NIGHT");
+
+        let (heading3, num3) = extract_scene_number("INT. DINER - DAY");
+        assert_eq!(num3, None);
+        assert_eq!(heading3, "INT. DINER - DAY");
+    }
+
+    #[test]
+    fn test_is_character_name() {
+        assert!(is_character_name("JOHN"));
+        assert!(is_character_name("SARAH CONNOR"));
+        assert!(is_character_name("DETECTIVE MILLER (O.S.)"));
+        assert!(is_character_name("VOICE (V.O.)"));
+        assert!(!is_character_name("John enters the room."));
+        assert!(!is_character_name("walking slowly through the rain"));
+        assert!(!is_character_name(""));
+    }
+
+    #[test]
+    fn test_ensure_parentheses() {
+        assert_eq!(ensure_parentheses("(whispering)"), "(whispering)");
+        assert_eq!(ensure_parentheses("laughing"), "(laughing)");
+        assert_eq!(ensure_parentheses("(beat"), "(beat)");
+    }
+
+    #[test]
+    fn test_clean_character_name() {
+        assert_eq!(clean_character_name("JOHN (CONT'D)"), "JOHN");
+        assert_eq!(clean_character_name("SARAH (cont'd)"), "SARAH");
+        assert_eq!(clean_character_name("  MIKE  "), "MIKE");
+    }
+
+    #[test]
+    fn test_append_continuation_line() {
+        let mut target = "This is a sentence".to_string();
+        append_continuation_line(&mut target, "that continues.");
+        assert_eq!(target, "This is a sentence that continues.");
+
+        let mut hyphen_target = "student-".to_string();
+        append_continuation_line(&mut hyphen_target, "ah");
+        assert_eq!(hyphen_target, "student-ah");
+    }
+
+    #[test]
+    fn test_is_more_marker() {
+        assert!(is_more_marker("(MORE)"));
+        assert!(is_more_marker("MORE"));
+        assert!(is_more_marker("(more)"));
+        assert!(!is_more_marker("(CONTINUED)"));
+    }
+
+    #[test]
+    fn test_classify_by_margin() {
+        let profile = LayoutProfile::default();
+        let trans = classify_by_margin(0.80, &profile, "CUT TO:", ElementType::Action);
+        assert_eq!(trans, ElementType::Transition);
+
+        let char_type = classify_by_margin(0.44, &profile, "JOHN", ElementType::Action);
+        assert_eq!(char_type, ElementType::Character);
+
+        let paren_type = classify_by_margin(0.37, &profile, "(beat)", ElementType::Character);
+        assert_eq!(paren_type, ElementType::Parenthetical);
+
+        let dialogue_type = classify_by_margin(0.30, &profile, "Hello there.", ElementType::Character);
+        assert_eq!(dialogue_type, ElementType::Dialogue);
+
+        let action_type = classify_by_margin(0.18, &profile, "The door opens.", ElementType::Action);
+        assert_eq!(action_type, ElementType::Action);
+    }
+}

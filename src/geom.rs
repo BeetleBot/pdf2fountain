@@ -388,3 +388,114 @@ fn decode_bytes(bytes: &[u8], cmap: &BTreeMap<u32, String>, is_cid: bool) -> Str
     }
     res
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multiply_matrix_identity() {
+        let identity = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let m = [2.0, 0.0, 0.0, 2.0, 10.0, 20.0];
+        let res = multiply_matrix(&m, &identity);
+        assert_eq!(res, m);
+    }
+
+    #[test]
+    fn test_apply_matrix() {
+        let m = [1.0, 0.0, 0.0, 1.0, 50.0, 100.0];
+        let (x, y) = apply_matrix(10.0, 20.0, &m);
+        assert_eq!(x, 60.0);
+        assert_eq!(y, 120.0);
+    }
+
+    #[test]
+    fn test_parse_hex() {
+        assert_eq!(parse_hex("<0041>"), Some(0x41));
+        assert_eq!(parse_hex("0020"), Some(0x20));
+        assert_eq!(parse_hex("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_utf16_hex() {
+        assert_eq!(parse_utf16_hex("<0041>"), Some("A".to_string()));
+        assert_eq!(parse_utf16_hex("00480069"), Some("Hi".to_string()));
+        assert_eq!(parse_utf16_hex("<003"), None); // not multiple of 4
+    }
+
+    #[test]
+    fn test_split_hex_tokens() {
+        // Space separated
+        let tokens1 = split_hex_tokens("<0001> <0002> <0003>");
+        assert_eq!(tokens1, vec!["<0001>", "<0002>", "<0003>"]);
+
+        // Concatenated (Fade In style)
+        let tokens2 = split_hex_tokens("<0001><0002><0003>");
+        assert_eq!(tokens2, vec!["<0001>", "<0002>", "<0003>"]);
+
+        // Array notation ('afterwriting style)
+        let tokens3 = split_hex_tokens("<0000> <0002> [<0041> <0042>]");
+        assert_eq!(tokens3.len(), 3);
+        assert_eq!(tokens3[0], "<0000>");
+        assert_eq!(tokens3[1], "<0002>");
+        assert!(tokens3[2].starts_with('['));
+    }
+
+    #[test]
+    fn test_parse_cmap_linear_range() {
+        let cmap_data = b"
+1 beginbfrange
+<0001> <0003> <0041>
+endbfrange
+";
+        let map = parse_cmap(cmap_data);
+        assert_eq!(map.get(&1), Some(&"A".to_string()));
+        assert_eq!(map.get(&2), Some(&"B".to_string()));
+        assert_eq!(map.get(&3), Some(&"C".to_string()));
+    }
+
+    #[test]
+    fn test_parse_cmap_array_range() {
+        let cmap_data = b"
+1 beginbfrange
+<0000> <0002> [<0048> <0045> <0059>]
+endbfrange
+";
+        let map = parse_cmap(cmap_data);
+        assert_eq!(map.get(&0), Some(&"H".to_string()));
+        assert_eq!(map.get(&1), Some(&"E".to_string()));
+        assert_eq!(map.get(&2), Some(&"Y".to_string()));
+    }
+
+    #[test]
+    fn test_decode_bytes() {
+        let mut cmap = BTreeMap::new();
+        cmap.insert(0x0041, "A".to_string());
+        cmap.insert(0x0042, "B".to_string());
+
+        // 2-byte CID test
+        let cid_bytes = [0x00, 0x41, 0x00, 0x42];
+        let decoded_cid = decode_bytes(&cid_bytes, &cmap, true);
+        assert_eq!(decoded_cid, "AB");
+
+        // 1-byte plain test
+        let mut plain_cmap = BTreeMap::new();
+        plain_cmap.insert(0x43, "C".to_string());
+        let plain_bytes = [0x43];
+        let decoded_plain = decode_bytes(&plain_bytes, &plain_cmap, false);
+        assert_eq!(decoded_plain, "C");
+    }
+
+    #[test]
+    fn test_merge_same_line_items() {
+        let items = vec![
+            RawTextItem { x: 100.0, y: 700.0, text: "INT.".to_string() },
+            RawTextItem { x: 135.0, y: 700.0, text: "ROOM".to_string() },
+            RawTextItem { x: 100.0, y: 650.0, text: "Action line".to_string() },
+        ];
+        let merged = merge_same_line_items(items);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].text, "INT. ROOM");
+        assert_eq!(merged[1].text, "Action line");
+    }
+}
