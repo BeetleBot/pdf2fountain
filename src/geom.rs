@@ -207,18 +207,23 @@ pub fn decode_tj(doc: &Document, font: &lopdf::Dictionary, operands: &[Object]) 
         parse_cmap(&data)
     }).unwrap_or_default();
 
+    // Detect CID fonts (Type0 with Identity-H encoding) which use 2-byte character codes
+    let is_cid = font.get(b"Encoding").ok()
+        .and_then(|e| if let Object::Name(n) = e { Some(n.as_slice()) } else { None })
+        .is_some_and(|n| n == b"Identity-H" || n == b"Identity-V");
+
     let mut out = String::new();
     for op in operands {
         match op {
             Object::Array(arr) => {
                 for item in arr {
                     if let Object::String(bytes, _) = item {
-                        out.push_str(&decode_bytes(bytes, &cmap));
+                        out.push_str(&decode_bytes(bytes, &cmap, is_cid));
                     }
                 }
             }
             Object::String(bytes, _) => {
-                out.push_str(&decode_bytes(bytes, &cmap));
+                out.push_str(&decode_bytes(bytes, &cmap, is_cid));
             }
             _ => {}
         }
@@ -260,19 +265,36 @@ fn parse_cmap(data: &[u8]) -> BTreeMap<u32, String> {
         if trimmed.ends_with("endbfrange") { in_bfrange = false; continue; }
 
         if in_bfchar {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let (Some(c), Some(t)) = (parse_hex(parts[0]), parse_utf16_hex(parts[1])) {
+            // split_hex_tokens handles both space-separated and concatenated hex tokens
+            // e.g. "<0041> <0061>" or "<0041><0061>"
+            let tokens = split_hex_tokens(trimmed);
+            if tokens.len() >= 2 {
+                if let (Some(c), Some(t)) = (parse_hex(&tokens[0]), parse_utf16_hex(&tokens[1])) {
                     map.insert(c, t);
                 }
             }
         } else if in_bfrange {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() >= 3 && !parts[2].starts_with('[') {
-                if let (Some(s), Some(e), Some(d)) = (parse_hex(parts[0]), parse_hex(parts[1]), parse_hex(parts[2])) {
-                    for i in 0..=(e - s) {
-                        if let Some(ch) = std::char::from_u32(d + i) {
-                            map.insert(s + i, ch.to_string());
+            let tokens = split_hex_tokens(trimmed);
+            if tokens.len() >= 3 {
+                if let (Some(s), Some(e)) = (parse_hex(&tokens[0]), parse_hex(&tokens[1])) {
+                    if tokens[2].starts_with('[') {
+                        // Array notation: <start> <end> [<dest1> <dest2> ...]
+                        let inner = tokens[2].trim_matches(|c| c == '[' || c == ']');
+                        let dest_tokens = split_hex_tokens(inner);
+                        for (idx, dt) in dest_tokens.iter().enumerate() {
+                            let cid = s + idx as u32;
+                            if cid > e {
+                                break;
+                            }
+                            if let Some(text) = parse_utf16_hex(dt) {
+                                map.insert(cid, text);
+                            }
+                        }
+                    } else if let Some(d) = parse_hex(&tokens[2]) {
+                        for i in 0..=(e - s) {
+                            if let Some(ch) = std::char::from_u32(d + i) {
+                                map.insert(s + i, ch.to_string());
+                            }
                         }
                     }
                 }
@@ -280,6 +302,44 @@ fn parse_cmap(data: &[u8]) -> BTreeMap<u32, String> {
         }
     }
     map
+}
+
+/// Splits a line of CMap hex tokens, handling both formats:
+/// - Space-separated: `<0003> <0003> <0020>`
+/// - Concatenated (Fade In style): `<0003><0003><0020>`
+fn split_hex_tokens(s: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_bracket = false;
+
+    for ch in s.chars() {
+        match ch {
+            '<' => {
+                in_bracket = true;
+                current.push(ch);
+            }
+            '>' => {
+                current.push(ch);
+                if in_bracket {
+                    tokens.push(current.clone());
+                    current.clear();
+                    in_bracket = false;
+                }
+            }
+            '[' if !in_bracket => {
+                // Array notation like [<0041> <0042>], push the rest as-is
+                let rest: String = s[s.find('[').unwrap_or(0)..].to_string();
+                tokens.push(rest);
+                return tokens;
+            }
+            _ if in_bracket => {
+                current.push(ch);
+            }
+            _ => {} // skip whitespace between tokens
+        }
+    }
+
+    tokens
 }
 
 fn parse_hex(s: &str) -> Option<u32> {
@@ -301,7 +361,7 @@ fn parse_utf16_hex(s: &str) -> Option<String> {
     }
 }
 
-fn decode_bytes(bytes: &[u8], cmap: &BTreeMap<u32, String>) -> String {
+fn decode_bytes(bytes: &[u8], cmap: &BTreeMap<u32, String>, is_cid: bool) -> String {
     let mut res = String::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -309,6 +369,11 @@ fn decode_bytes(bytes: &[u8], cmap: &BTreeMap<u32, String>) -> String {
             let code = ((bytes[i] as u32) << 8) | (bytes[i + 1] as u32);
             if let Some(s) = cmap.get(&code) {
                 res.push_str(s);
+                i += 2;
+                continue;
+            }
+            // For CID fonts, always consume 2 bytes — never fall back to 1-byte mode
+            if is_cid {
                 i += 2;
                 continue;
             }
